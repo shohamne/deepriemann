@@ -23,8 +23,8 @@ with tf.device("/cpu:0"):
     
     # Create the model
     x = tf.placeholder("float", [None, 784], name="x-input")
-    A = tf.Variable(tf.zeros([784,8]), name="weights")
-    B = tf.Variable(tf.zeros([8,10]), name="weights")
+    A = tf.Variable(tf.random_uniform([784,10]), name="A_weights")
+    B = tf.Variable(tf.random_uniform([10,10]), name="B_weights")
     A_hist = tf.histogram_summary("A_weights", A)
     B_hist = tf.histogram_summary("B_weights", B)
     b = tf.Variable(tf.zeros([10], name="bias"))
@@ -33,16 +33,35 @@ with tf.device("/cpu:0"):
       Ax = tf.nn.softmax(tf.matmul(x,A))
     with tf.name_scope("ABx_b") as scope:
       y = tf.nn.softmax(tf.matmul(Ax,B) + b)
-      
+    
     y_hist = tf.histogram_summary("y", y)
     
     # Define loss and optimizer
+    with tf.name_scope("regulization") as scope:
+        weight_decay_A = 0
+        regulize_A = tf.nn.l2_loss(A)
+        weight_decay_B = 0
+        regulize_B = tf.nn.l2_loss(B)
+        rgA_summ = tf.scalar_summary("regulize A", regulize_A)
+        rgB_summ = tf.scalar_summary("regulize B", regulize_B)
     y_ = tf.placeholder("float", [None,10], name="y-input")
     with tf.name_scope("xent") as scope:
       cross_entropy = -tf.reduce_sum(y_*tf.log(y))
       ce_summ = tf.scalar_summary("cross entropy", cross_entropy)
+      loss = cross_entropy+(weight_decay_A+regulize_A+weight_decay_A+regulize_B)
+      
     with tf.name_scope("train") as scope:
-      train_step = tf.train.GradientDescentOptimizer(0.01).minimize(cross_entropy)
+        global_step = tf.Variable(0, trainable=False)
+        starter_learning_rate = 0.01
+        learning_rate = tf.train.exponential_decay(starter_learning_rate, global_step,
+                                                       10000, 0.96, staircase=True)
+        # Passing global_step to minimize() will increment it at each step.
+        
+        #train_step = tf.train.GradientDescentOptimizer(0.1).minimize(cross_entropy)
+        learning_step = ( tf.train.GradientDescentOptimizer(learning_rate)
+                        .minimize(cross_entropy, global_step=global_step) )
+        
+        lr_summ = tf.scalar_summary("learning_rate", learning_rate)
     
     with tf.name_scope("test") as scope:
       correct_prediction = tf.equal(tf.argmax(y,1), tf.argmax(y_,1))
@@ -55,7 +74,7 @@ with tf.device("/cpu:0"):
     
     # Test trained model
     
-    for i in range(1000):
+    for i in range(100000):
       if i % 10 == 0:  # Record summary data, and the accuracy
         feed = {x: mnist.test.images, y_: mnist.test.labels}
         result = sess.run([merged, accuracy], feed_dict=feed)
@@ -66,6 +85,6 @@ with tf.device("/cpu:0"):
       else:
         batch_xs, batch_ys = mnist.train.next_batch(100)
         feed = {x: batch_xs, y_: batch_ys}
-        sess.run(train_step, feed_dict=feed)
+        sess.run(learning_step, feed_dict=feed)
     
     print(accuracy.eval({x: mnist.test.images, y_: mnist.test.labels}))
