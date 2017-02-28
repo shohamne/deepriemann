@@ -18,13 +18,16 @@ mnist = input_data.read_data_sets("/home/neta/Downloads/mnist/", one_hot=True)
 
 import tensorflow as tf
 
+#parameters
+k = 5
+
 with tf.device("/cpu:0"):
     sess = tf.InteractiveSession()
     
     # Create the model
     x = tf.placeholder("float", [None, 784], name="x-input")
-    A = tf.Variable(tf.random_uniform([784,10]), name="A_weights")
-    B = tf.Variable(tf.random_uniform([10,10]), name="B_weights")
+    A = tf.Variable(tf.random_uniform([784,k]), name="A_weights")
+    B = tf.Variable(tf.random_uniform([k,10]), name="B_weights")
     A_hist = tf.histogram_summary("A_weights", A)
     B_hist = tf.histogram_summary("B_weights", B)
     b = tf.Variable(tf.zeros([10], name="bias"))
