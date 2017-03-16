@@ -18,32 +18,33 @@ mnist = input_data.read_data_sets("/home/neta/Downloads/mnist/", one_hot=True)
 
 import tensorflow as tf
 
+
 #parameters
-k = 5
+k = 10
 
 with tf.device("/cpu:0"):
     sess = tf.InteractiveSession()
     
     # Create the model
     x = tf.placeholder("float", [None, 784], name="x-input")
-    A = tf.Variable(tf.random_uniform([784,k]), name="A_weights")
-    B = tf.Variable(tf.random_uniform([k,10]), name="B_weights")
-    A_hist = tf.histogram_summary("A_weights", A)
-    B_hist = tf.histogram_summary("B_weights", B)
+    A = tf.Variable(tf.random_uniform([784,k]), name="A-weights")
+    B = tf.Variable(tf.random_uniform([k,10]), name="B-weights")
+    A_hist = tf.histogram_summary("A-hist", A)
+    B_hist = tf.histogram_summary("B-hist", B)
     b = tf.Variable(tf.zeros([10], name="bias"))
     b_hist = tf.histogram_summary("biases", b)
-    with tf.name_scope("Ax") as scope:
+    with tf.name_scope("xA") as scope:
       Ax = tf.nn.softmax(tf.matmul(x,A))
-    with tf.name_scope("ABx_b") as scope:
+    with tf.name_scope("xAB_b") as scope:
       y = tf.nn.softmax(tf.matmul(Ax,B) + b)
     
     y_hist = tf.histogram_summary("y", y)
     
     # Define loss and optimizer
     with tf.name_scope("regulization") as scope:
-        weight_decay_A = 0
+        weight_decay_A = 1
         regulize_A = tf.nn.l2_loss(A)
-        weight_decay_B = 0
+        weight_decay_B = 1
         regulize_B = tf.nn.l2_loss(B)
         rgA_summ = tf.scalar_summary("regulize A", regulize_A)
         rgB_summ = tf.scalar_summary("regulize B", regulize_B)
@@ -51,7 +52,7 @@ with tf.device("/cpu:0"):
     with tf.name_scope("xent") as scope:
       cross_entropy = -tf.reduce_sum(y_*tf.log(y))
       ce_summ = tf.scalar_summary("cross entropy", cross_entropy)
-      loss = cross_entropy+(weight_decay_A+regulize_A+weight_decay_A+regulize_B)
+      loss = cross_entropy+(weight_decay_A*regulize_A+weight_decay_A*regulize_B)
       
     with tf.name_scope("train") as scope:
         global_step = tf.Variable(0, trainable=False)
@@ -76,7 +77,7 @@ with tf.device("/cpu:0"):
     tf.initialize_all_variables().run()
     
     # Test trained model
-    
+
     for i in range(100000):
       if i % 10 == 0:  # Record summary data, and the accuracy
         feed = {x: mnist.test.images, y_: mnist.test.labels}
