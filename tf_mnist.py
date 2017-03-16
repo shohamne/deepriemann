@@ -6,12 +6,11 @@ from __future__ import print_function
 from tensorflow.examples.tutorials.mnist import input_data
 mnist = input_data.read_data_sets("/home/neta/Downloads/mnist/", one_hot=True)
 #mnist = input_data.read_data_sets("/tmp/data/", one_hot=True)
-
 import tensorflow as tf
 
-
 #parameters
-k = 5
+k = 10
+weight_decay = 0.1
 
 with tf.device("/cpu:0"):
     sess = tf.InteractiveSession()
@@ -20,8 +19,12 @@ with tf.device("/cpu:0"):
     x = tf.placeholder("float", [None, 784], name="x-input")
     A = tf.Variable(tf.random_uniform([784,k]), name="A-weights")
     B = tf.Variable(tf.random_uniform([k,10]), name="B-weights")
+    W = tf.matmul(A, B, name="W-weights")
+
     A_hist = tf.histogram_summary("A-hist", A)
     B_hist = tf.histogram_summary("B-hist", B)
+    W_hist = tf.histogram_summary("W-hist", B)
+
     b = tf.Variable(tf.zeros([10], name="bias"))
     b_hist = tf.histogram_summary("biases", b)
     with tf.name_scope("xA") as scope:
@@ -33,17 +36,20 @@ with tf.device("/cpu:0"):
     
     # Define loss and optimizer
     with tf.name_scope("regulization") as scope:
-        weight_decay_A = 1
         regulize_A = tf.nn.l2_loss(A)
-        weight_decay_B = 1
         regulize_B = tf.nn.l2_loss(B)
+        regulize_W = tf.nn.l2_loss(W)
+
         rgA_summ = tf.scalar_summary("regulize A", regulize_A)
         rgB_summ = tf.scalar_summary("regulize B", regulize_B)
+        rgW_summ = tf.scalar_summary("regulize W", regulize_W)
+
     y_ = tf.placeholder("float", [None,10], name="y-input")
+
     with tf.name_scope("xent") as scope:
       cross_entropy = -tf.reduce_sum(y_*tf.log(y))
       ce_summ = tf.scalar_summary("cross entropy", cross_entropy)
-      loss = cross_entropy+(weight_decay_A*regulize_A+weight_decay_A*regulize_B)
+      loss = cross_entropy+(weight_decay*regulize_W)
       
     with tf.name_scope("train") as scope:
         global_step = tf.Variable(0, trainable=False)

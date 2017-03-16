@@ -14,6 +14,8 @@ from pymanopt.manifolds import FixedRankEmbedded, Euclidean, Product
 
 #parameters
 k = 10
+weight_decay = 1
+learning_rate = 0.0001
 
 with tf.device("/cpu:0"):
     #sess = tf.InteractiveSession()
@@ -46,18 +48,10 @@ with tf.device("/cpu:0"):
 #with tf.device("/cpu:0"):
     # Define loss and optimizer
     with tf.name_scope("regulization") as scope:
-
-
-        weight_decay_A = 0
         regulize_A = tf.nn.l2_loss(A)
-
-        weight_decay_B = 0
         regulize_B = tf.nn.l2_loss(B)
-
-        weight_decay_M = 0
         regulize_M = tf.nn.l2_loss(M)
 
-        weight_decay_W = 1
         regulize_W = tf.nn.l2_loss(W)
 
         rgA_summ = tf.scalar_summary("regulize A", regulize_A)
@@ -71,7 +65,7 @@ with tf.device("/cpu:0"):
       cross_entropy = -tf.reduce_sum(y_*tf.log(y))
       ce_summ = tf.scalar_summary("cross entropy", cross_entropy)
 
-      loss = cross_entropy + (weight_decay_W*regulize_W)
+      loss = cross_entropy + (weight_decay*regulize_W)
       
 
     
@@ -89,5 +83,5 @@ with tf.device("/cpu:0"):
     problem = Problem(manifold=manifold, cost=loss, accuracy=accuracy, summary=summaries, arg=[A, M, B, b], data=[x,y_], verbosity=1)
     solver = SGD(maxiter=100000,logverbosity=10)
 
-    solver.solve(problem, mnist, 10,0.0005)
+    solver.solve(problem, mnist, 10,learning_rate)
 
