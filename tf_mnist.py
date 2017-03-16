@@ -1,12 +1,3 @@
-"""A very simple MNIST classifer, modified to display data in TensorBoard
-
-See extensive documentation for the original model at
-http://tensorflow.org/tutorials/mnist/beginners/index.md
-
-See documentaion on the TensorBoard specific pieces at
-http://tensorflow.org/how_tos/summaries_and_tensorboard/index.md
-
-"""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -20,7 +11,7 @@ import tensorflow as tf
 
 
 #parameters
-k = 10
+k = 5
 
 with tf.device("/cpu:0"):
     sess = tf.InteractiveSession()
@@ -77,7 +68,6 @@ with tf.device("/cpu:0"):
     tf.initialize_all_variables().run()
     
     # Test trained model
-
     for i in range(100000):
       if i % 10 == 0:  # Record summary data, and the accuracy
         feed = {x: mnist.test.images, y_: mnist.test.labels}
