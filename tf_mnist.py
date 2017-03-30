@@ -25,7 +25,7 @@ with tf.device("/cpu:0"):
     B_hist = tf.histogram_summary("B-hist", B)
     W_hist = tf.histogram_summary("W-hist", B)
 
-    b = tf.Variable(tf.zeros([10], name="bias"))
+    b = tf.Variable(tf.zeros([10]), name="bias")
     b_hist = tf.histogram_summary("biases", b)
     with tf.name_scope("xA") as scope:
       Ax = tf.nn.softmax(tf.matmul(x,A))
