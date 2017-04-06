@@ -9,8 +9,12 @@ mnist = input_data.read_data_sets("/home/neta/Downloads/mnist/", one_hot=True)
 import tensorflow as tf
 
 #parameters
-k = 10
+k = 4
 weight_decay = 0.1
+learning_rate_starter = 0.01
+learning_rate_decay_steps =10000
+learning_rate_decay_rate = 0.96
+
 
 with tf.device("/cpu:0"):
     sess = tf.InteractiveSession()
@@ -53,9 +57,8 @@ with tf.device("/cpu:0"):
       
     with tf.name_scope("train") as scope:
         global_step = tf.Variable(0, trainable=False)
-        starter_learning_rate = 0.01
-        learning_rate = tf.train.exponential_decay(starter_learning_rate, global_step,
-                                                       10000, 0.96, staircase=True)
+        learning_rate = tf.train.exponential_decay(learning_rate_starter, global_step,
+                                learning_rate_decay_steps,learning_rate_decay_rate, staircase=True)
         # Passing global_step to minimize() will increment it at each step.
         
         #train_step = tf.train.GradientDescentOptimizer(0.1).minimize(cross_entropy)
