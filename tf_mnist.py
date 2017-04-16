@@ -9,11 +9,11 @@ mnist = input_data.read_data_sets("/home/neta/Downloads/mnist/", one_hot=True)
 import tensorflow as tf
 
 #parameters
-k = 4
+k = 5
 weight_decay = 0.1
 learning_rate_starter = 0.01
 learning_rate_decay_steps =10000
-learning_rate_decay_rate = 0.96
+learning_rate_decay_rate = 0.5
 
 
 with tf.device("/cpu:0"):
@@ -77,7 +77,7 @@ with tf.device("/cpu:0"):
     tf.initialize_all_variables().run()
     
     # Test trained model
-    for i in range(100000):
+    for i in range(10000000):
       if i % 10 == 0:  # Record summary data, and the accuracy
         feed = {x: mnist.test.images, y_: mnist.test.labels}
         result = sess.run([merged, accuracy], feed_dict=feed)
