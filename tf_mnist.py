@@ -25,18 +25,18 @@ with tf.device("/cpu:0"):
     B = tf.Variable(tf.random_uniform([k,10]), name="B-weights")
     W = tf.matmul(A, B, name="W-weights")
 
-    A_hist = tf.histogram_summary("A-hist", A)
-    B_hist = tf.histogram_summary("B-hist", B)
-    W_hist = tf.histogram_summary("W-hist", B)
+    A_hist = tf.summary.histogram("A-hist", A)
+    B_hist = tf.summary.histogram("B-hist", B)
+    W_hist = tf.summary.histogram("W-hist", B)
 
     b = tf.Variable(tf.zeros([10]), name="bias")
-    b_hist = tf.histogram_summary("biases", b)
+    b_hist = tf.summary.histogram("biases", b)
     with tf.name_scope("xA") as scope:
       Ax = tf.nn.softmax(tf.matmul(x,A))
     with tf.name_scope("xAB_b") as scope:
       y = tf.nn.softmax(tf.matmul(Ax,B) + b)
     
-    y_hist = tf.histogram_summary("y", y)
+    y_hist = tf.summary.histogram("y", y)
     
     # Define loss and optimizer
     with tf.name_scope("regulization") as scope:
@@ -44,15 +44,15 @@ with tf.device("/cpu:0"):
         regulize_B = tf.nn.l2_loss(B)
         regulize_W = tf.nn.l2_loss(W)
 
-        rgA_summ = tf.scalar_summary("regulize A", regulize_A)
-        rgB_summ = tf.scalar_summary("regulize B", regulize_B)
-        rgW_summ = tf.scalar_summary("regulize W", regulize_W)
+        rgA_summ = tf.summary.scalar("regulize A", regulize_A)
+        rgB_summ = tf.summary.scalar("regulize B", regulize_B)
+        rgW_summ = tf.summary.scalar("regulize W", regulize_W)
 
     y_ = tf.placeholder("float", [None,10], name="y-input")
 
     with tf.name_scope("xent") as scope:
       cross_entropy = -tf.reduce_sum(y_*tf.log(y))
-      ce_summ = tf.scalar_summary("cross entropy", cross_entropy)
+      ce_summ = tf.summary.scalar("cross entropy", cross_entropy)
       loss = cross_entropy+(weight_decay*regulize_W)
       
     with tf.name_scope("train") as scope:
@@ -65,15 +65,15 @@ with tf.device("/cpu:0"):
         learning_step = ( tf.train.GradientDescentOptimizer(learning_rate)
                         .minimize(cross_entropy, global_step=global_step) )
         
-        lr_summ = tf.scalar_summary("learning_rate", learning_rate)
+        lr_summ = tf.summary.scalar("learning_rate", learning_rate)
     
     with tf.name_scope("test") as scope:
       correct_prediction = tf.equal(tf.argmax(y,1), tf.argmax(y_,1))
       accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
-      accuracy_summary = tf.scalar_summary("accuracy", accuracy)
+      accuracy_summary = tf.summary.scalar("accuracy", accuracy)
     
-    merged = tf.merge_all_summaries()
-    writer = tf.train.SummaryWriter("/tmp/mnist_logs", sess.graph_def)
+    merged = tf.summary.merge_all()
+    writer = tf.summary.FileWriter("/tmp/mnist_logs", sess.graph_def)
     tf.initialize_all_variables().run()
     
     # Test trained model
