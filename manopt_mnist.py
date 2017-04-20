@@ -10,12 +10,12 @@ import tensorflow as tf
 
 from pymanopt import Problem
 from pymanopt.solvers import SGD
-from pymanopt.manifolds import FixedRankEmbedded, Euclidean, Product, Stiefel
+from pymanopt.manifolds import FixedRankEmbedded, Euclidean, Product
 
 
 #parameters
 k = 5
-weight_decay = 0.1
+weight_decay = 0.0
 learning_rate_starter = 0.01
 learning_rate_decay_steps =10000
 learning_rate_decay_rate = 0.5
@@ -51,14 +51,21 @@ with tf.device("/cpu:0"):
 
 #with tf.device("/gpu:0"):
 
-    #with tf.name_scope("xA") as scope:
-    #  xA = tf.nn.softmax(tf.matmul(x,A))
-    #with tf.name_scope("xAM") as scope:
-    #  xAM = tf.nn.softmax(tf.matmul(xA,tf.diag(M,'diag_M')))
-    #with tf.name_scope("xAMB_b") as scope:
-    #  lin_y = tf.matmul(xAM,B) + b
-    with tf.name_scope("xW_b") as scope:
-        lin_y = tf.matmul(x, W) + b
+    #####################################################
+    #
+    with tf.name_scope("xA") as scope:
+      xA = tf.matmul(x,A)
+    with tf.name_scope("xAM") as scope:
+      xAM = tf.matmul(xA,tf.diag(M,'diag_M'))
+    with tf.name_scope("xAMB_b") as scope:
+      lin_y = tf.matmul(xAM,B) + b
+
+    #####################################################
+    #
+    #with tf.name_scope("xW_b") as scope:
+    #    lin_y = tf.matmul(x, W) + b
+
+
     with tf.name_scope("e_xW_b") as scope:
         e_lin_y = tf.matmul(x,eW) + b
     with tf.name_scope("logit") as scope:
