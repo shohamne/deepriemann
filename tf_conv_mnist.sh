@@ -1,0 +1,12 @@
+python tf_conv_mnist.py full
+python tf_conv_mnist.py 1024
+python tf_conv_mnist.py 512
+python tf_conv_mnist.py 256
+python tf_conv_mnist.py 128
+python tf_conv_mnist.py 64
+python tf_conv_mnist.py 32
+python tf_conv_mnist.py 16
+python tf_conv_mnist.py 8
+python tf_conv_mnist.py 4
+python tf_conv_mnist.py 2
+python tf_conv_mnist.py 1
