@@ -33,7 +33,7 @@ from pymanopt import manifolds
 
 import layers
 
-def cnn_model_fn(features, labels, mode, rank):
+def cnn(features, labels, mode, rank):
   """Model function for CNN."""
   # Input Layer
   # Reshape X to 4-D tensor: [batch_size, width, height, channels]
@@ -86,12 +86,13 @@ def cnn_model_fn(features, labels, mode, rank):
   # Input Tensor Shape: [batch_size, 7 * 7 * 64]
   # Output Tensor Shape: [batch_size, 1024]
   if rank == 'full':
-    dense = layers.dense(inputs=pool2_flat, units=1024, activation=tf.nn.relu, summaries=['norm','histogram'])
+    dense = layers.dense(inputs=pool2_flat, units=1024, activation=tf.nn.relu)  #, summaries=['norm','histogram'])
     manifold = None
     manifold_args = None
   else:
     dense, fixed_rank_manifold, fixed_rank_manifold_args = \
-        layers.fixed_rank_riemannian(inputs=pool2_flat, units=1024, activation=tf.nn.relu,rank=rank, summaries=['norm','histogram'])
+        layers.fixed_rank_riemannian(inputs=pool2_flat, units=1024, activation=tf.nn.relu,rank=rank)
+                                     #, #summaries=['norm','histogram'])
 
   # Add dropout operation; 0.6 probability that element will be kept
   dropout = tf.layers.dropout(
@@ -105,7 +106,7 @@ def cnn_model_fn(features, labels, mode, rank):
   loss = None
   train_op = None
 
-  # Calculate Loss (for both TRAIN and EVAL modes)
+  # Calculate Loss and Accuracy (for both TRAIN and EVAL modes)
   if mode != learn.ModeKeys.INFER:
     onehot_labels = tf.one_hot(indices=tf.cast(labels, tf.int32), depth=10)
     loss = tf.losses.softmax_cross_entropy(
@@ -130,31 +131,49 @@ def cnn_model_fn(features, labels, mode, rank):
           logits, name="softmax_tensor")
   }
 
-  if not rank == 'full':
+  accuracy = None
+
+  # Calculate Accuracy (for both TRAIN and EVAL modes)
+  if mode != learn.ModeKeys.INFER:        
+    correct_prediction = tf.equal(tf.cast(predictions['classes'], labels.dtype), labels)
+    accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"),name='accuracy')
+  
+  manifold = None
+  manifold_args = None
+
+  if not rank == 'full' and learn.ModeKeys.TRAIN:
       all_args = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES) #TODO: don't use globals
       euclidian_args = [arg for arg in all_args if arg not in fixed_rank_manifold_args]
       euclidian_manifolds = [manifolds.Euclidean(*arg.get_shape().as_list()) for arg in euclidian_args]
 
       manifold_args = euclidian_args + fixed_rank_manifold_args
       manifold = manifolds.Product(euclidian_manifolds+[fixed_rank_manifold])
-  else:
-      manifold = None
-      manifold_args = None
 
+  nn = {
+      'predictions': predictions,
+      'loss': loss,
+      'train_op': train_op,
+      'accuracy': accuracy,
+      'manifold': manifold,
+      'manifold_args': manifold_args
+  }
 
-  # Return a ModelFnOps object
-  model = model_fn_lib.ModelFnOps(
-      mode=mode, predictions=predictions, loss=loss, train_op=train_op)
+  return nn
 
+def cnn_model_fn(features, labels, mode, params):
+    nn = cnn(features, labels, mode, params['rank'])
+    # Return a ModelFnOps object
+    model = model_fn_lib.ModelFnOps(
+        mode=mode, predictions=nn['predictions'], loss=nn['loss'], train_op=nn['train_op'])
 
-  return model, manifold, manifold_args
+    return model
 
 
 def train(rank=int(1024/2), #'full' #'full' #1024
-          maxiter=5000,
+          maxiter=20000,
           learning_rate_starter=0.01,
-          learning_rate_decay_steps=10000,
-          learning_rate_decay_rate=0.5,
+          learning_rate_decay_steps=2000,
+          learning_rate_decay_rate=0.1**0.1,
           batch_size=100):
 
     from tensorflow.examples.tutorials.mnist import input_data
@@ -163,21 +182,33 @@ def train(rank=int(1024/2), #'full' #'full' #1024
     x = tf.placeholder("float", [None, 784], name="x-input")
     y = tf.placeholder("int32", [None], name="y-input")
 
-    model, manifold, manifold_args = cnn_model_fn(x,y,'train',rank)
+    with tf.variable_scope('mnist') as scope:
+        nn_train = cnn(x, y, learn.ModeKeys.TRAIN, rank)
+    with tf.variable_scope(scope, reuse=True):
+        nn_eval = cnn(x, y, learn.ModeKeys.EVAL, rank)
 
-    correct_prediction = tf.equal(tf.cast(model.predictions['classes'], y.dtype), y)
-    accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
+    #tf.summary.scalar("trian_loss", nn_train['loss'])
 
-    tf.summary.scalar("accuracy", accuracy)
-    tf.summary.scalar("loss", model.loss)
-    summaries = tf.summary.merge_all()
+    #tf.summary.scalar("trian_accuracy", nn_train['accuracy']) 
+    #train_summaries = tf.summary.merge_all()
+    train_summaries = tf.summary.merge([
+        tf.summary.scalar("train_loss", nn_train['loss']),
+        tf.summary.scalar("train_accuracy", nn_train['accuracy'])
+    ])
+    eval_summaries = tf.summary.merge([
+        tf.summary.scalar("eval_loss", nn_eval['loss']),
+        tf.summary.scalar("eval_accuracy", nn_eval['accuracy'])
+    ])
+
 
     now = datetime.now()
     logdir = path.join('/tmp/tf_beackend_logs',
                        "{}-rank={}".format(now.strftime("%Y%m%d-%H%M%S"), rank))
 
     if not rank=='full':
-        problem = Problem(manifold=manifold, cost=model.loss, accuracy=accuracy, summary=summaries, arg=manifold_args, data=[x, y],
+        problem = Problem(manifold=nn_train['manifold'], cost=nn_train['loss'], accuracy=nn_train['accuracy'],
+                          train_summary=train_summaries, eval_summary=eval_summaries,
+                          arg=nn_train['manifold_args'], data=[x, y],
                           verbosity=1, logdir=logdir)
         solver = SGD(maxiter=maxiter, logverbosity=10, maxtime=1000000)
         solver.solve(problem, None, mnist, batch_size, learning_rate_starter,
@@ -190,71 +221,35 @@ def train(rank=int(1024/2), #'full' #'full' #1024
         learning_rate = tf.train.exponential_decay(learning_rate_starter, global_step,
                                                    learning_rate_decay_steps, learning_rate_decay_rate, staircase=True)
         learning_step = (tf.train.GradientDescentOptimizer(learning_rate)
-                         .minimize(model.loss, global_step=global_step))
+                         .minimize(nn_train['loss'], global_step=global_step))
 
         tf.initialize_all_variables().run()
 
         writer = tf.summary.FileWriter(logdir, sess.graph_def)
 
         for i in range(maxiter):
+            batch_xs, batch_ys = mnist.train.next_batch(batch_size)
+            feed = {x: batch_xs, y: batch_ys}
+            if i==0:
+                summary_str = sess.run(train_summaries, feed_dict=feed)
+            writer.add_summary(summary_str, i)
             if i % 10 == 0:  # Record summary data, and the accuracy
                 feed = {x: mnist.test.images, y: mnist.test.labels}
-                result = sess.run([summaries, accuracy], feed_dict=feed)
+                result = sess.run([eval_summaries, nn_eval['accuracy']], feed_dict=feed)
                 summary_str = result[0]
                 acc = result[1]
                 writer.add_summary(summary_str, i)
                 print("Accuracy at step %s: %s" % (i, acc))
-            else:
-                batch_xs, batch_ys = mnist.train.next_batch(batch_size)
-                feed = {x: batch_xs, y: batch_ys}
-                sess.run(learning_step, feed_dict=feed)
+            result = sess.run([train_summaries, learning_step], feed_dict=feed)
+            summary_str = result[0]
 
-        print(accuracy.eval({x: mnist.test.images, y: mnist.test.labels}))
-
-
-
-
-# def main_(unused_argv):
-#   # Load training and eval data
-#   mnist = learn.datasets.load_dataset("mnist")
-#   train_data = mnist.train.images  # Returns np.array
-#   train_labels = np.asarray(mnist.train.labels, dtype=np.int32)
-#   eval_data = mnist.test.images  # Returns np.array
-#   eval_labels = np.asarray(mnist.test.labels, dtype=np.int32)
-#
-#   # Create the Estimator
-#   mnist_classifier = learn.Estimator(
-#       model_fn=cnn_model_fn, model_dir="/tmp/mnist_convnet_model")
-#
-#   # Set up logging for predictions
-#   # Log the values in the "Softmax" tensor with label "probabilities"
-#   tensors_to_log = {"probabilities": "softmax_tensor"}
-#   logging_hook = tf.train.LoggingTensorHook(
-#       tensors=tensors_to_log, every_n_iter=50)
-#
-#   # Train the model
-#   mnist_classifier.fit(
-#       x=train_data,
-#       y=train_labels,
-#       batch_size=100,
-#       steps=20000,
-#       monitors=[logging_hook])
-#
-#   # Configure the accuracy metric for evaluation
-#   metrics = {
-#       "accuracy":
-#           learn.MetricSpec(
-#               metric_fn=tf.metrics.accuracy, prediction_key="classes"),
-#   }
-#
-#   # Evaluate the model and print results
-#   eval_results = mnist_classifier.evaluate(
-#       x=eval_data, y=eval_labels, metrics=metrics)
-#   print(eval_results)
+        print(nn_train['accuracy'].eval({x: mnist.test.images, y: mnist.test.labels}))
 
 def main(unused_argv):
+    #train_orig(); return
+
     if len(unused_argv)<2:
-        rank = 512
+        rank = 64#'full'
     else:
         rank = unused_argv[1]
         if rank.isdigit():
@@ -262,5 +257,49 @@ def main(unused_argv):
 
     train(rank=rank)
 
+#####################################################################33
+# origunal training
+
+def train_orig():
+  # Load training and eval data
+  mnist = learn.datasets.load_dataset("mnist")
+  train_data = mnist.train.images  # Returns np.array
+  train_labels = np.asarray(mnist.train.labels, dtype=np.int32)
+  eval_data = mnist.test.images  # Returns np.array
+  eval_labels = np.asarray(mnist.test.labels, dtype=np.int32)
+
+  # Create the Estimator
+  mnist_classifier = learn.Estimator(
+      model_fn=cnn_model_fn,
+      params={'rank': 'full'},
+      model_dir="/tmp/mnist_convnet_model")
+
+  # Set up logging for predictions
+  # Log the values in the "Softmax" tensor with label "probabilities"
+  tensors_to_log = {'loss': 'softmax_cross_entropy_loss/value:0'} #{"probabilities": "softmax_tensor"}
+  logging_hook = tf.train.LoggingTensorHook(
+      tensors=tensors_to_log, every_n_iter=50)
+
+  # Train the model
+  mnist_classifier.fit(
+      x=train_data,
+      y=train_labels,
+      batch_size=100,
+      steps=100,#20000,
+      monitors=[logging_hook])
+
+  # Configure the accuracy metric for evaluation
+  metrics = {
+      "accuracy":
+          learn.MetricSpec(
+              metric_fn=tf.metrics.accuracy, prediction_key="classes"),
+  }
+
+  # Evaluate the model and print results
+  eval_results = mnist_classifier.evaluate(
+      x=eval_data, y=eval_labels, metrics=metrics)
+  print(eval_results)
+
 if __name__ == "__main__":
   tf.app.run()
+
