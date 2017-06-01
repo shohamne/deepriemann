@@ -33,7 +33,7 @@ from pymanopt import manifolds
 
 import layers
 
-def cnn(features, labels, mode, rank):
+def cnn(features, labels, mode, rank, is_riemannian):
   """Model function for CNN."""
   # Input Layer
   # Reshape X to 4-D tensor: [batch_size, width, height, channels]
@@ -85,14 +85,26 @@ def cnn(features, labels, mode, rank):
   # Densely connected layer with 1024 neurons
   # Input Tensor Shape: [batch_size, 7 * 7 * 64]
   # Output Tensor Shape: [batch_size, 1024]
+  riemannian_manifolds = []
+  riemannian_args = []
   if rank == 'full':
     dense = layers.dense(inputs=pool2_flat, units=1024, activation=tf.nn.relu)  #, summaries=['norm','histogram'])
     manifold = None
     manifold_args = None
   else:
-    dense, fixed_rank_manifold, fixed_rank_manifold_args = \
-        layers.fixed_rank_riemannian(inputs=pool2_flat, units=1024, activation=tf.nn.relu,rank=rank)
+    if is_riemannian:
+        dense, fixed_rank_manifold, fixed_rank_manifold_args = \
+            layers.fixed_rank_riemannian(inputs=pool2_flat, units=1024, activation=tf.nn.relu,rank=rank)
                                      #, #summaries=['norm','histogram'])
+        riemannian_manifolds += [fixed_rank_manifold]
+        riemannian_args += fixed_rank_manifold_args
+    else:
+        #regularizer = tf.contrib.layers.l2_regularizer(scale=0.1)
+        regularizer = None
+        dense0 = layers.dense(inputs=pool2_flat, units=rank, kernel_regularizer=regularizer,summaries=['norm'])
+        dense= layers.dense(inputs=dense0, units=rank, kernel_regularizer=regularizer,summaries=['norm'])
+
+
 
   # Add dropout operation; 0.6 probability that element will be kept
   dropout = tf.layers.dropout(
@@ -141,13 +153,12 @@ def cnn(features, labels, mode, rank):
   manifold = None
   manifold_args = None
 
-  if not rank == 'full' and learn.ModeKeys.TRAIN:
-      all_args = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES) #TODO: don't use globals
-      euclidian_args = [arg for arg in all_args if arg not in fixed_rank_manifold_args]
-      euclidian_manifolds = [manifolds.Euclidean(*arg.get_shape().as_list()) for arg in euclidian_args]
 
-      manifold_args = euclidian_args + fixed_rank_manifold_args
-      manifold = manifolds.Product(euclidian_manifolds+[fixed_rank_manifold])
+  all_args = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES) #TODO: don't use globals
+  euclidian_args = [arg for arg in all_args if arg not in riemannian_args]
+  euclidian_manifolds = [manifolds.Euclidean(*arg.get_shape().as_list()) for arg in euclidian_args]
+  manifold_args = euclidian_args + riemannian_args
+  manifold = manifolds.Product(euclidian_manifolds+riemannian_manifolds)
 
   nn = {
       'predictions': predictions,
@@ -161,7 +172,7 @@ def cnn(features, labels, mode, rank):
   return nn
 
 def cnn_model_fn(features, labels, mode, params):
-    nn = cnn(features, labels, mode, params['rank'])
+    nn = cnn(features, labels, mode, params['rank'],params['is_riemannian'])
     # Return a ModelFnOps object
     model = model_fn_lib.ModelFnOps(
         mode=mode, predictions=nn['predictions'], loss=nn['loss'], train_op=nn['train_op'])
@@ -169,50 +180,68 @@ def cnn_model_fn(features, labels, mode, params):
     return model
 
 
-def train(rank=int(1024/2), #'full' #'full' #1024
+def train(rank, #'full' #'full' #1024
+          is_riemannian,
           maxiter=20000,
-          learning_rate_starter=0.01,
-          learning_rate_decay_steps=2000,
-          learning_rate_decay_rate=0.1**0.1,
-          batch_size=100):
+          batch_size=100,
+          epoch=100):
 
     from tensorflow.examples.tutorials.mnist import input_data
+
+    r = rank if rank != 'full' else 1024
+
+    q1 = ( np.log2(1024) / np.log2(r))
+    q2 = q1#**2
+    learning_rate_starter = 0.01*q1
+    learning_rate_end = 0.001*q2
+    learning_rate_decay_steps = 10
+    learning_rate_decay_rate = (learning_rate_end/learning_rate_starter) \
+                               ** (float(learning_rate_decay_steps)/maxiter)
+
+
     mnist = input_data.read_data_sets("/home/neta/Downloads/mnist/")
 
     x = tf.placeholder("float", [None, 784], name="x-input")
     y = tf.placeholder("int32", [None], name="y-input")
 
     with tf.variable_scope('mnist') as scope:
-        nn_train = cnn(x, y, learn.ModeKeys.TRAIN, rank)
+        nn_train = cnn(x, y, learn.ModeKeys.TRAIN, rank, is_riemannian)
     with tf.variable_scope(scope, reuse=True):
-        nn_eval = cnn(x, y, learn.ModeKeys.EVAL, rank)
+        nn_eval = cnn(x, y, learn.ModeKeys.EVAL, rank, is_riemannian)
 
     #tf.summary.scalar("trian_loss", nn_train['loss'])
 
     #tf.summary.scalar("trian_accuracy", nn_train['accuracy']) 
     #train_summaries = tf.summary.merge_all()
     train_summaries = tf.summary.merge([
-        tf.summary.scalar("train_loss", nn_train['loss']),
-        tf.summary.scalar("train_accuracy", nn_train['accuracy'])
+        tf.summary.scalar("train_loss", nn_eval['loss']),
+        tf.summary.scalar("train_accuracy", nn_eval['accuracy']),
+        tf.summary.scalar("train_loss_dropout", nn_eval['loss']),
+        tf.summary.scalar("train_accuracy_dropout", nn_eval['accuracy'])
     ])
-    eval_summaries = tf.summary.merge([
-        tf.summary.scalar("eval_loss", nn_eval['loss']),
-        tf.summary.scalar("eval_accuracy", nn_eval['accuracy'])
+    test_summaries = tf.summary.merge([
+        tf.summary.scalar("test_loss", nn_eval['loss']),
+        tf.summary.scalar("test_accuracy", nn_eval['accuracy']),
+        tf.summary.scalar("test_loss_dropout", nn_train['loss']),
+        tf.summary.scalar("test_accuracy_dropout", nn_train['accuracy'])
     ])
+
 
 
     now = datetime.now()
     logdir = path.join('/tmp/tf_beackend_logs',
-                       "{}-rank={}".format(now.strftime("%Y%m%d-%H%M%S"), rank))
+                       "{}-rank={}-is_riemannian={}".format(now.strftime("%Y%m%d-%H%M%S"),
+                                                            rank, is_riemannian))
 
-    if not rank=='full':
-        problem = Problem(manifold=nn_train['manifold'], cost=nn_train['loss'], accuracy=nn_train['accuracy'],
-                          train_summary=train_summaries, eval_summary=eval_summaries,
+    if True: #not rank=='full':
+        problem = Problem(manifold=nn_train['manifold'], cost=nn_eval['loss'], accuracy=nn_eval['accuracy'],
+                          cost_dropout=nn_train['loss'], accuracy_dropout=nn_train['accuracy'],
+                          train_summary=train_summaries, test_summary=test_summaries,
                           arg=nn_train['manifold_args'], data=[x, y],
                           verbosity=1, logdir=logdir)
         solver = SGD(maxiter=maxiter, logverbosity=10, maxtime=1000000)
-        solver.solve(problem, None, mnist, batch_size, learning_rate_starter,
-                     learning_rate_decay_steps, learning_rate_decay_rate)
+        solver.solve(problem, mnist, batch_size, learning_rate_starter,
+                     learning_rate_decay_steps, learning_rate_decay_rate, epoch)
 
     else:
         sess = tf.InteractiveSession()
@@ -233,9 +262,9 @@ def train(rank=int(1024/2), #'full' #'full' #1024
             if i==0:
                 summary_str = sess.run(train_summaries, feed_dict=feed)
             writer.add_summary(summary_str, i)
-            if i % 10 == 0:  # Record summary data, and the accuracy
+            if i % epoch == 0:  # Record summary data, and the accuracy
                 feed = {x: mnist.test.images, y: mnist.test.labels}
-                result = sess.run([eval_summaries, nn_eval['accuracy']], feed_dict=feed)
+                result = sess.run([test_summaries, nn_eval['accuracy']], feed_dict=feed)
                 summary_str = result[0]
                 acc = result[1]
                 writer.add_summary(summary_str, i)
@@ -249,13 +278,20 @@ def main(unused_argv):
     #train_orig(); return
 
     if len(unused_argv)<2:
-        rank = 64#'full'
+        rank = 'full'
+        rank = 2
     else:
         rank = unused_argv[1]
         if rank.isdigit():
             rank = int(rank)
+    if len(unused_argv)<3:
+        is_riemannian = True
+    else:
+        is_riemannian = unused_argv[2] == 'riemannian'
 
-    train(rank=rank)
+
+    print ("rank: {},    is_riemannian: {}".format(rank, is_riemannian))
+    train(rank, is_riemannian)
 
 #####################################################################33
 # origunal training
