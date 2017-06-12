@@ -33,7 +33,7 @@ from pymanopt import manifolds
 
 import layers
 
-def cnn(features, labels, mode, rank, is_riemannian):
+def cnn(features, labels, mode, rank, is_riemannian, dropout_rate):
   """Model function for CNN."""
   # Input Layer
   # Reshape X to 4-D tensor: [batch_size, width, height, channels]
@@ -108,7 +108,7 @@ def cnn(features, labels, mode, rank, is_riemannian):
 
   # Add dropout operation; 0.6 probability that element will be kept
   dropout = tf.layers.dropout(
-      inputs=dense, rate=0.4, training=mode == learn.ModeKeys.TRAIN)
+      inputs=dense, rate=dropout_rate, training=mode == learn.ModeKeys.TRAIN)
 
   # Logits layer
   # Input Tensor Shape: [batch_size, 1024]
@@ -182,7 +182,8 @@ def cnn_model_fn(features, labels, mode, params):
 
 def train(rank, #'full' #'full' #1024
           is_riemannian,
-          maxiter=20000,
+          dropout_rate,
+          maxiter=10000,
           batch_size=100,
           epoch=100):
 
@@ -191,7 +192,7 @@ def train(rank, #'full' #'full' #1024
     r = rank if rank != 'full' else 1024
 
     q1 = ( np.log2(1024) / np.log2(r))
-    q2 = q1#**2
+    q2 = 1.0#q1#**2
     learning_rate_starter = 0.01*q1
     learning_rate_end = 0.001*q2
     learning_rate_decay_steps = 10
@@ -205,9 +206,9 @@ def train(rank, #'full' #'full' #1024
     y = tf.placeholder("int32", [None], name="y-input")
 
     with tf.variable_scope('mnist') as scope:
-        nn_train = cnn(x, y, learn.ModeKeys.TRAIN, rank, is_riemannian)
+        nn_train = cnn(x, y, learn.ModeKeys.TRAIN, rank, is_riemannian, dropout_rate)
     with tf.variable_scope(scope, reuse=True):
-        nn_eval = cnn(x, y, learn.ModeKeys.EVAL, rank, is_riemannian)
+        nn_eval = cnn(x, y, learn.ModeKeys.EVAL, rank, is_riemannian, dropout_rate)
 
     #tf.summary.scalar("trian_loss", nn_train['loss'])
 
@@ -216,8 +217,8 @@ def train(rank, #'full' #'full' #1024
     train_summaries = tf.summary.merge([
         tf.summary.scalar("train_loss", nn_eval['loss']),
         tf.summary.scalar("train_accuracy", nn_eval['accuracy']),
-        tf.summary.scalar("train_loss_dropout", nn_eval['loss']),
-        tf.summary.scalar("train_accuracy_dropout", nn_eval['accuracy'])
+        tf.summary.scalar("train_loss_dropout", nn_train['loss']),
+        tf.summary.scalar("train_accuracy_dropout", nn_train['accuracy'])
     ])
     test_summaries = tf.summary.merge([
         tf.summary.scalar("test_loss", nn_eval['loss']),
@@ -227,11 +228,10 @@ def train(rank, #'full' #'full' #1024
     ])
 
 
-
     now = datetime.now()
-    logdir = path.join('/tmp/tf_beackend_logs',
-                       "{}-rank={}-is_riemannian={}".format(now.strftime("%Y%m%d-%H%M%S"),
-                                                            rank, is_riemannian))
+    logdir = path.join('tf_backend_logs',
+                       "{}-rank={}-is_riemannian={}=dropout_rate={}".format(now.strftime("%Y%m%d-%H%M%S"),
+                                                            rank, is_riemannian, dropout_rate))
 
     if True: #not rank=='full':
         problem = Problem(manifold=nn_train['manifold'], cost=nn_eval['loss'], accuracy=nn_eval['accuracy'],
@@ -284,14 +284,20 @@ def main(unused_argv):
         rank = unused_argv[1]
         if rank.isdigit():
             rank = int(rank)
+
     if len(unused_argv)<3:
         is_riemannian = True
     else:
         is_riemannian = unused_argv[2] == 'riemannian'
 
+    if len(unused_argv) < 4:
+        dropout_rate=0.4
+    else:
+        dropout_rate=float(unused_argv[3])
 
-    print ("rank: {},    is_riemannian: {}".format(rank, is_riemannian))
-    train(rank, is_riemannian)
+
+    print ("rank: {},    is_riemannian: {},     dropout_rate: {}".format(rank, is_riemannian,dropout_rate))
+    train(rank, is_riemannian, dropout_rate)
 
 #####################################################################33
 # origunal training
