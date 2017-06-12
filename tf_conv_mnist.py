@@ -102,7 +102,7 @@ def cnn(features, labels, mode, rank, is_riemannian, dropout_rate):
         #regularizer = tf.contrib.layers.l2_regularizer(scale=0.1)
         regularizer = None
         dense0 = layers.dense(inputs=pool2_flat, units=rank, kernel_regularizer=regularizer,summaries=['norm'])
-        dense= layers.dense(inputs=dense0, units=rank, kernel_regularizer=regularizer,summaries=['norm'])
+        dense= layers.dense(inputs=dense0, units=1024, kernel_regularizer=regularizer,summaries=['norm'])
 
 
 
@@ -286,7 +286,7 @@ def main(unused_argv):
             rank = int(rank)
 
     if len(unused_argv)<3:
-        is_riemannian = True
+        is_riemannian = False
     else:
         is_riemannian = unused_argv[2] == 'riemannian'
 
